@@ -1,6 +1,4 @@
 from django.contrib import admin
-from .models import *
+from .models import Profile
 
-class AuthorAdmin(admin.ModelAdmin):
-    pass
-admin.site.register(Profile, AuthorAdmin)
+admin.site.register(Profile, admin.ModelAdmin)

@@ -1,11 +1,12 @@
 from asgiref.sync import async_to_sync
 from channels.generic.websocket import WebsocketConsumer
 import json
-from api.models import *
+from api.models import Chat_room, Chat_room_users, Message_chat, Profile, Message_status
 from urllib.parse import parse_qs
 from django.contrib.auth.models import User
 from rest_framework.authtoken.models import Token
-from api.serializers import *
+from api.serializers import UserSerializer, UserSerializerView, MessageSerializer, ChatsSerializer
+
 
 class ChatConsumer(WebsocketConsumer):
     def connect(self):
@@ -15,14 +16,16 @@ class ChatConsumer(WebsocketConsumer):
         self.room_group_name = 'chat_%s' % self.room_name
 
         self.user = User.objects.get(id=user_id)
-        self.chat = Chat_room.objects.get(id = self.room_name)
+        self.chat = Chat_room.objects.get(id=self.room_name)
 
-        try: # проверяем наличие доступа к данным у пользователя
-            Chat_room_users.objects.get(user = self.user, chat_room = self.chat)
-        except Chat_room_users.DoesNotExist:
-            raise DenyConnection("Нет доступа") #нет доступа #правильная обработка ошибок?
+        chat_room_users = Chat_room_users.objects.filter(
+            user=self.user, chat_room=self.chat)
+        if chat_room_users.exists() == False:
+            # нет доступа #правильная обработка ошибок?
+            raise DenyConnection("Нет доступа")
 
-        Message_status.objects.filter(user = self.user,message__chat_room = self.chat,is_read = False).update(is_read = True)
+        Message_status.objects.filter(
+            user=self.user, message__chat_room=self.chat, is_read=False).update(is_read=True)
 
         async_to_sync(self.channel_layer.group_add)(
             self.room_group_name,
@@ -40,9 +43,9 @@ class ChatConsumer(WebsocketConsumer):
     # Receive message from WebSocket
     def receive(self, text_data):
         text_data_json = json.loads(text_data)
-        if text_data_json['method'] == 'ADD_MESSAGE' :
+        if text_data_json['method'] == 'ADD_MESSAGE':
 
-            text_data_json['user'] = self.user.id #добовляем данные 
+            text_data_json['user'] = self.user.id  # добовляем данные
             text_data_json['chat_room'] = self.chat.id
             serializer = MessageSerializer(data=text_data_json)
 
@@ -50,61 +53,62 @@ class ChatConsumer(WebsocketConsumer):
                 print('добовляю сообщение')
                 serializer.save()
                 async_to_sync(self.channel_layer.group_send)(
-                self.room_group_name,
+                    self.room_group_name,
                     {
                         'data': serializer.data,
                         'type': 'chat_message',
-                        'method' : 'ADD_MESSAGE',
+                        'method': 'ADD_MESSAGE',
                     }
                 )
         if text_data_json['method'] == 'REDACT_MESSAGE':
 
-            text_data_json['user'] = self.user.id #добовляем данные 
+            text_data_json['user'] = self.user.id  # добовляем данные
             text_data_json['chat_room'] = self.chat.id
 
-            try:
-                message = Messege_chat.objects.get(id=text_data_json['pk'],user = self.user)
-            except Messege_chat.DoesNotExist:
-                raise DenyConnection("Нет доступа") #нет доступа
+            message = Message_chat.objects.filter(
+                id=text_data_json['pk'], user=self.user)
+            if message.exists() == False:
+                raise DenyConnection("Нет доступа")  # нет доступа
+            else:
+                message = message.get()
 
             serializer = MessageSerializer(message, data=text_data_json)
             if serializer.is_valid():
                 serializer.save()
                 async_to_sync(self.channel_layer.group_send)(
-                self.room_group_name,
+                    self.room_group_name,
                     {
                         'data': serializer.data,
                         'type': 'chat_message',
-                        'method' : 'REDACT_MESSAGE',
+                        'method': 'REDACT_MESSAGE',
                     }
                 )
         if text_data_json['method'] == 'DELETE_MESSAGE':
 
-            try:
-                message = Messege_chat.objects.get(id=text_data_json['pk'],user = self.user)
-            except Messege_chat.DoesNotExist:
-                raise DenyConnection("Нет доступа") #нет доступа
-            
+            message = Message_chat.objects.filter(
+                id=text_data_json['pk'], user=self.user)
+            if message.exists() == False:
+                raise DenyConnection("Нет доступа")  # нет доступа
+            else:
+                message = message.get()
+
             message.delete()
             async_to_sync(self.channel_layer.group_send)(
                 self.room_group_name,
-                    {
-                        'data': {'id':text_data_json['pk']},
-                        'type': 'chat_message',
-                        'method' : 'DELETE_MESSAGE',
-                    }
-                )
-
-
-
+                {
+                    'data': {'id': text_data_json['pk']},
+                    'type': 'chat_message',
+                    'method': 'DELETE_MESSAGE',
+                }
+            )
 
         # Receive message from room group
+
     def chat_message(self, event):
         self.send(text_data=json.dumps({
-            'method' : event['method'],
-            'data' : event['data']
+            'method': event['method'],
+            'data': event['data']
         }))
-
 
 
 class UserPersonalConsumer(WebsocketConsumer):
@@ -114,7 +118,6 @@ class UserPersonalConsumer(WebsocketConsumer):
         user_id = Token.objects.get(key=token).user_id
         self.room_name = user_id
         self.room_group_name = 'user_%s' % user_id
-
 
         self.user = User.objects.get(id=user_id)
         async_to_sync(self.channel_layer.group_add)(
@@ -130,10 +133,9 @@ class UserPersonalConsumer(WebsocketConsumer):
             self.channel_name
         )
 
-
     def send_data(self, event):
         self.send(text_data=json.dumps({
-            'method' : event['method'],
-            'data' : event['data'],
-            'count_unread_message' : event['count_unread_message'],
+            'method': event['method'],
+            'data': event['data'],
+            'count_unread_message': event['count_unread_message'],
         }))
