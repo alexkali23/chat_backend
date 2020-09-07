@@ -3,14 +3,23 @@ from .models import Chat_room, Chat_room_users, Message_chat, Profile, Message_s
 from django.contrib.auth.models import User
 from rest_framework import serializers
 
-#UserSerializer, UserSerializerView, MessageSerializer, ChatsSerializer, Chat_room_users_serializer
+# UserSerializer, UserSerializerView, MessageSerializer, ChatsSerializer, Chat_room_users_serializer
 
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ('username', 'email', 'password')
+        fields = ('username', 'email', 'password','avatar','token')
         extra_kwargs = {'password': {'write_only': True}}
+        
+    avatar = serializers.SerializerMethodField('get_avatar')
+    token = serializers.SerializerMethodField('get_token')
+
+    def get_token(self, obj):
+        return obj.auth_token.key
+
+    def get_avatar(self, obj):
+        return obj.profile.avatar.url
 
     def create(self, validated_data):
         user = User(
@@ -70,6 +79,8 @@ class ChatsSerializer(serializers.ModelSerializer):
         return Message_status.objects.filter(user=user, message__chat_room=chat_room, is_read=False).count()
 
     def create(self, validated_data):
+        if self.context == {}:
+            return 0
 
         chat = Chat_room(
             name=validated_data['name']

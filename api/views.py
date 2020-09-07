@@ -46,7 +46,8 @@ class LoginView(APIView):
         password = request.data.get("password")
         user = authenticate(username=username, password=password)
         if user:
-            return Response({"token": user.auth_token.key, 'username': username, 'avatar': user.profile.avatar.url})
+            user_data = UserSerializer(user).data
+            return Response(user_data)
         else:
             return Response({"error": "Wrong Credentials"}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -66,8 +67,8 @@ def get_user_data(request):
     user = auth.get_user(request)
     if request.method == 'GET':
         if(request.user.is_authenticated):
-            args['username'] = 'AnonymousUser'
-            return Response(args)  # !!!! не законченно
+            user_data = UserSerializer(user).data
+            return Response(user_data)
         else:
             args['username'] = 'AnonymousUser'
             return Response(args)
